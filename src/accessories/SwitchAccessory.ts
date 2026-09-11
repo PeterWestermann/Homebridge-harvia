@@ -1,4 +1,4 @@
-import { HarviaDevice, DeviceStateSubscriber } from '../HarviaDevice';
+import { HarviaDevice, DeviceStateSubscriber } from '../HarviaDevice.js';
 import { PlatformAccessory, Logger, CharacteristicValue, API, HAP } from 'homebridge';
 import type { Service } from 'homebridge';
 

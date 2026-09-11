@@ -1,4 +1,4 @@
-import { HarviaAPI } from './api/HarviaAPI';
+import { HarviaAPI } from './api/HarviaAPI.js';
 
 export interface DeviceStateSubscriber {
   onDeviceUpdate(device: HarviaDevice): void;
