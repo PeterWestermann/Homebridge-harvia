@@ -5,12 +5,12 @@ import {
   PlatformConfig,
   PlatformAccessory,
 } from 'homebridge';
-import { HarviaAPI } from './api/HarviaAPI';
-import { HarviaDevice } from './HarviaDevice';
-import { HarviaWebSocket } from './HarviaWebSocket';
-import { ThermostatAccessory } from './accessories/ThermostatAccessory';
-import { SwitchAccessory, SwitchType } from './accessories/SwitchAccessory';
-import { DoorSensorAccessory } from './accessories/DoorSensorAccessory';
+import { HarviaAPI } from './api/HarviaAPI.js';
+import { HarviaDevice } from './HarviaDevice.js';
+import { HarviaWebSocket } from './HarviaWebSocket.js';
+import { ThermostatAccessory } from './accessories/ThermostatAccessory.js';
+import { SwitchAccessory, SwitchType } from './accessories/SwitchAccessory.js';
+import { DoorSensorAccessory } from './accessories/DoorSensorAccessory.js';
 
 interface DeviceTreeItem {
   id: string;

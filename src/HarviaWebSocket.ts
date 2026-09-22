@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { HarviaAPI, EndpointType } from './api/HarviaAPI';
+import { HarviaAPI, EndpointType } from './api/HarviaAPI.js';
 
 interface GraphQLMessage {
   type: string;

@@ -1,6 +1,6 @@
 import { API } from 'homebridge';
-import { HarviaPlatform } from './HarviaPlatform';
+import { HarviaPlatform } from './HarviaPlatform.js';
 
-export = (api: API) => {
+export default (api: API) => {
   api.registerPlatform('homebridge-harvia', 'HarviaSauna', HarviaPlatform);
 };
