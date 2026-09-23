@@ -1,11 +1,11 @@
 import { HarviaAPI } from './api/HarviaAPI.js';
-
+ 
 export interface DeviceStateSubscriber {
   onDeviceUpdate(device: HarviaDevice): void;
 }
-
+ 
 type OverridableField = 'active' | 'lightsOn' | 'fanOn' | 'steamOn' | 'targetTemp' | 'targetRh';
-
+ 
 export class HarviaDevice {
   public active = false;
   public lightsOn = false;
@@ -18,16 +18,16 @@ export class HarviaDevice {
   public heatUpTime = 0;
   public remainingTime = 0;
   public statusCodes: string | number = '';
-
+ 
   public get isDoorOpen(): boolean {
     return String(this.statusCodes).length > 1
       && String(this.statusCodes)[1] === '9';
   }
-
+ 
   public lastUpdate: Date | null = null;
-
+ 
   private subscribers = new Set<DeviceStateSubscriber>();
-
+ 
   // Fields we've just told the cloud to change. AppSync's shadow doc fires
   // onStateUpdated the instant `desired` changes, with `reported` still at
   // the OLD value — that stale push is what makes HomeKit flip to the
@@ -37,28 +37,28 @@ export class HarviaDevice {
   // and dropped, instead of being written into local state.
   private optimisticOverrides = new Map<OverridableField, { value: boolean | number; expiresAt: number }>();
   private static readonly OPTIMISTIC_GRACE_MS = 8000;
-
+ 
   constructor(
     private readonly api: HarviaAPI,
     public readonly id: string,
     public readonly name: string
   ) {}
-
+ 
   public subscribe(subscriber: DeviceStateSubscriber): void {
     this.subscribers.add(subscriber);
     subscriber.onDeviceUpdate(this);
   }
-
+ 
   private notifySubscribers(): void {
     for (const subscriber of this.subscribers) {
       subscriber.onDeviceUpdate(this);
     }
   }
-
+ 
   private shouldAcceptIncoming(field: OverridableField, incoming: boolean | number): boolean {
     const override = this.optimisticOverrides.get(field);
     if (!override) return true;
-
+ 
     if (Date.now() > override.expiresAt) {
       // Cloud never confirmed within the grace window (command likely
       // failed silently, or is just slow) — stop trusting our own guess
@@ -66,21 +66,21 @@ export class HarviaDevice {
       this.optimisticOverrides.delete(field);
       return true;
     }
-
+ 
     if (incoming === override.value) {
       // Server has caught up with what we asked for — confirmed.
       this.optimisticOverrides.delete(field);
       return true;
     }
-
+ 
     // Still inside the grace window and this contradicts the value we
     // just requested — this is the stale echo. Drop it.
     return false;
   }
-
+ 
   public updateData(data: any): void {
     if (!data || typeof data !== 'object') return;
-
+ 
     if ('active' in data) {
       const value = Boolean(data.active);
       if (this.shouldAcceptIncoming('active', value)) this.active = value;
@@ -121,11 +121,11 @@ export class HarviaDevice {
     this.lastUpdate = new Date();
     this.notifySubscribers();
   }
-
+ 
   private getEndpoint(): string {
     return this.api.getEndpoint('device');
   }
-
+ 
   private async requestStateChange(payload: Record<string, unknown>): Promise<void> {
     const body = {
       operationName: 'Mutation',
@@ -138,7 +138,7 @@ export class HarviaDevice {
     };
     await this.api.appsyncRequest(this.getEndpoint(), body);
   }
-
+ 
   // Writes `value` locally straight away (so HomeKit reflects the tap
   // with zero lag), records it as the expected value for the grace
   // window, then sends the mutation. If the mutation itself throws, the
@@ -153,7 +153,7 @@ export class HarviaDevice {
     (this as any)[field] = value;
     this.optimisticOverrides.set(field, { value, expiresAt: Date.now() + HarviaDevice.OPTIMISTIC_GRACE_MS });
     this.notifySubscribers();
-
+ 
     try {
       await this.requestStateChange(payload);
     } catch (error) {
@@ -163,28 +163,29 @@ export class HarviaDevice {
       throw error;
     }
   }
-
+ 
   public async setActive(value: boolean): Promise<void> {
     await this.applyOptimistic('active', value, { active: value ? 1 : 0 });
   }
-
+ 
   public async setLight(value: boolean): Promise<void> {
     await this.applyOptimistic('lightsOn', value, { light: value ? 1 : 0 });
   }
-
+ 
   public async setFan(value: boolean): Promise<void> {
     await this.applyOptimistic('fanOn', value, { fan: value ? 1 : 0 });
   }
-
+ 
   public async setSteamer(value: boolean): Promise<void> {
     await this.applyOptimistic('steamOn', value, { steamEn: value ? 1 : 0 });
   }
-
+ 
   public async setTargetTemperature(value: number): Promise<void> {
     await this.applyOptimistic('targetTemp', value, { targetTemp: value });
   }
-
+ 
   public async setTargetHumidity(value: number): Promise<void> {
     await this.applyOptimistic('targetRh', value, { targetRh: value });
   }
 }
+ 
