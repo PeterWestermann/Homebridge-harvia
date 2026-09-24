@@ -34,13 +34,13 @@ After an upstream merge:
 
 ## Version policy
 
-The PW version sits one patch line ahead of the currently integrated upstream stable line and uses a prerelease suffix.
+The scoped package `@peterwestermann/homebridge-harvia` uses its own stable semantic-version line.
 
-Example:
-- upstream: `0.2.0`
-- PW: `0.2.1-pw.1`
+Initial PW scoped release:
+- integrated upstream baseline: `0.2.0`
+- PW scoped package: `0.2.1`
 
-This prevents Homebridge UI from offering the already-integrated `0.2.0` as an update, while a later stable `0.2.1` still sorts above `0.2.1-pw.1` and therefore becomes visible for review.
+Because Homebridge checks updates for the installed npm package name, the scoped package no longer needs a `-pw` prerelease suffix. New upstream changes are detected by the upstream-sync workflow, reviewed, merged, and then released as a new stable PW package version.
 
 ## Rollback
 
