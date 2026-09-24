@@ -1,5 +1,5 @@
 {
-  "name": "homebridge-harvia",
+  "name": "@peterwestermann/homebridge-harvia",
   "version": "0.2.1-pw.1",
   "description": "Homebridge plugin for Harvia Sauna (Xenio WiFi) via MyHarvia API - Peter Westermann maintained variant",
   "license": "MIT",
@@ -44,5 +44,8 @@
   },
   "peerDependencies": {
     "homebridge": "^1.6.0 || ^2.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
