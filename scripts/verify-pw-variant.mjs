@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const requiredChecks = [
+  ['src/settings.ts', /@peterwestermann\/homebridge-harvia/],
   ['src/accessories/TemperatureSensorAccessory.ts', /class TemperatureSensorAccessory/],
   ['src/HarviaPlatform.ts', /enableTemperatureSensor/],
   ['src/HarviaPlatform.ts', /device\.id\}-temperature|\['temperature'/],
@@ -18,6 +19,11 @@ for (const [path, pattern] of requiredChecks) {
 }
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+if (pkg.name !== '@peterwestermann/homebridge-harvia') {
+  console.error(`PW integrity check failed: unexpected package name "${pkg.name}"`);
+  failed = true;
+}
+
 if (!/-pw\./.test(pkg.version)) {
   console.error(`PW integrity check failed: package version "${pkg.version}" is not marked as a PW prerelease`);
   failed = true;
