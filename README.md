@@ -133,8 +133,9 @@ The PW delta is limited to:
 - an upstream-sync workflow that proposes upstream changes through a pull request instead of applying them silently.
 
 Versioning rule:
-- upstream `0.2.0` -> PW `0.2.1-pw.1`;
-- when upstream reaches `0.2.1`, the next PW release moves to the next patch line after review.
+- integrated upstream baseline `0.2.0` -> initial scoped PW release `0.2.1`;
+- later PW releases use normal stable semantic versions;
+- upstream changes are detected and reviewed independently by the upstream-sync workflow.
 
 The dedicated sensor uses the same live `device.currentTemp` value already populated by the plugin's WebSocket subscriptions and polling fallback.
 
