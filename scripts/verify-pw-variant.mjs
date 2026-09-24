@@ -24,8 +24,8 @@ if (pkg.name !== '@peterwestermann/homebridge-harvia') {
   failed = true;
 }
 
-if (!/-pw\./.test(pkg.version)) {
-  console.error(`PW integrity check failed: package version "${pkg.version}" is not marked as a PW prerelease`);
+if (/[-+]/.test(pkg.version)) {
+  console.error(`PW integrity check failed: package version "${pkg.version}" must be a stable semver for normal Homebridge updates`);
   failed = true;
 }
 
