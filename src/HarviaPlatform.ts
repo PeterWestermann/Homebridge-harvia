@@ -12,6 +12,7 @@ import { ThermostatAccessory } from './accessories/ThermostatAccessory.js';
 import { TemperatureSensorAccessory } from './accessories/TemperatureSensorAccessory.js';
 import { SwitchAccessory, SwitchType } from './accessories/SwitchAccessory.js';
 import { DoorSensorAccessory } from './accessories/DoorSensorAccessory.js';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 interface DeviceTreeItem {
   id: string;
@@ -176,7 +177,7 @@ export class HarviaPlatform implements DynamicPlatformPlugin {
       if (!enabled) {
         // If disabled and previously registered, unregister it
         if (existing) {
-          this.api.unregisterPlatformAccessories('homebridge-harvia', 'HarviaSauna', [existing]);
+          this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existing]);
           this.accessories.delete(uuid);
           this.log.info(`Harvia: unregistered disabled accessory "${label}"`);
         }
@@ -187,7 +188,7 @@ export class HarviaPlatform implements DynamicPlatformPlugin {
       if (!accessory) {
         accessory = new this.api.platformAccessory(`${displayName} ${label}`, uuid);
         accessory.context.deviceId = device.id;
-        this.api.registerPlatformAccessories('homebridge-harvia', 'HarviaSauna', [accessory]);
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.set(uuid, accessory);
         this.log.info(`Harvia: registered accessory "${displayName} ${label}"`);
       }
