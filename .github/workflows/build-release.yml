@@ -18,6 +18,8 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -29,4 +31,14 @@ jobs:
         run: npm run build
 
       - name: Create npm tarball
-        run: npm pack
+        run: |
+          npm pack
+          mkdir -p release
+          mv peterwestermann-homebridge-harvia-*.tgz release/
+
+      - name: Upload release tarball
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: homebridge-harvia-pw-package
+          path: release/*.tgz
+          if-no-files-found: error

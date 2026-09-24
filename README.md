@@ -23,12 +23,12 @@ Ported from the [Home Assistant integration](https://github.com/RubenHarms/ha-ha
 
 ### Via Homebridge UI (recommended)
 1. Go to the **Plugins** tab in Homebridge UI
-2. Search for `homebridge-harvia`
+2. Search for `@peterwestermann/homebridge-harvia`
 3. Click **Install**
 
 ### Via terminal
 ```bash
-sudo npm install -g homebridge-harvia
+sudo npm install -g @peterwestermann/homebridge-harvia
 ```
 
 ---
@@ -137,3 +137,19 @@ Versioning rule:
 - when upstream reaches `0.2.1`, the next PW release moves to the next patch line after review.
 
 The dedicated sensor uses the same live `device.currentTemp` value already populated by the plugin's WebSocket subscriptions and polling fallback.
+
+
+---
+
+## PW scoped package
+
+The maintained PW release is published as `@peterwestermann/homebridge-harvia`.
+
+The Homebridge platform name remains `HarviaSauna`. Homebridge can therefore migrate cached dynamic-platform accessories from the previous plugin identifier to the scoped plugin identifier during startup.
+
+For migration from the unscoped plugin:
+1. Create a Homebridge backup.
+2. Install `@peterwestermann/homebridge-harvia`.
+3. Remove the old `homebridge-harvia` package without clearing cached accessories.
+4. Restart Homebridge once.
+5. Verify all existing Harvia accessories and the dedicated temperature sensor before deleting any rollback package.
