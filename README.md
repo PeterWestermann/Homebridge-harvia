@@ -2,6 +2,8 @@
 
 Homebridge plugin for Harvia Sauna (Xenio WiFi) via the MyHarvia cloud API.
 
+> **PW maintained variant:** tracks the upstream project and adds a dedicated HomeKit temperature sensor so the sauna's current temperature can be used cleanly in HomeKit automations and Apple Shortcuts.
+
 Ported from the [Home Assistant integration](https://github.com/RubenHarms/ha-harvia-xenio-wifi) by Ruben Harms.
 
 **Tested with:** Harvia Xenio WiFi (CX001WIFI) and Harvia Cilindro PC90XE. Should work with any controller compatible with the MyHarvia app.
@@ -42,6 +44,7 @@ Add to your `config.json` under `platforms`, or configure via the Homebridge UI 
   "password": "yourpassword",
   "pollingInterval": 60,
   "enableThermostat": true,
+  "enableTemperatureSensor": true,
   "enableLight": true,
   "enableFan": true,
   "enableSteamer": false,
@@ -55,6 +58,7 @@ Add to your `config.json` under `platforms`, or configure via the Homebridge UI 
 | `password` | ✅ | — | MyHarvia app password |
 | `pollingInterval` | ❌ | `60` | Seconds between fallback polls (min 30) |
 | `enableThermostat` | ❌ | `true` | Expose heater as HomeKit HeaterCooler |
+| `enableTemperatureSensor` | ❌ | `true` | Expose current sauna temperature as a dedicated HomeKit Temperature Sensor for automations and Shortcuts |
 | `enableLight` | ❌ | `true` | Expose light as HomeKit Switch |
 | `enableFan` | ❌ | `true` | Expose fan as HomeKit Switch |
 | `enableSteamer` | ❌ | `false` | Expose steamer as HomeKit Switch |
@@ -67,6 +71,7 @@ Add to your `config.json` under `platforms`, or configure via the Homebridge UI 
 | Accessory | HomeKit Type | Enabled by default |
 |---|---|---|
 | Thermostat | HeaterCooler | ✅ |
+| Temperature | Temperature Sensor | ✅ |
 | Power | Switch | ✅ Always on |
 | Light | Switch | ✅ |
 | Fan | Switch | ✅ |
@@ -114,3 +119,21 @@ Verify credentials match the MyHarvia app login, not the Harvia website.
 API reverse-engineering by [Ruben Harms](https://github.com/RubenHarms/ha-harvia-xenio-wifi).
 
 This plugin is not affiliated with or endorsed by Harvia.
+
+---
+
+## PW maintenance model
+
+This fork intentionally keeps the upstream Harvia implementation as intact as possible.
+
+The PW delta is limited to:
+- a dedicated HomeKit `TemperatureSensor` accessory;
+- the `enableTemperatureSensor` configuration flag;
+- CI checks that verify the PW delta is still present after upstream merges;
+- an upstream-sync workflow that proposes upstream changes through a pull request instead of applying them silently.
+
+Versioning rule:
+- upstream `0.2.0` -> PW `0.2.1-pw.1`;
+- when upstream reaches `0.2.1`, the next PW release moves to the next patch line after review.
+
+The dedicated sensor uses the same live `device.currentTemp` value already populated by the plugin's WebSocket subscriptions and polling fallback.
