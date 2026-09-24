@@ -1,25 +1,34 @@
 {
   "name": "homebridge-harvia",
-  "version": "0.2.0",
-  "description": "Homebridge plugin for Harvia Sauna (Xenio WiFi) via MyHarvia API",
+  "version": "0.2.1-pw.1",
+  "description": "Homebridge plugin for Harvia Sauna (Xenio WiFi) via MyHarvia API - Peter Westermann maintained variant",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "verify:pw": "node scripts/verify-pw-variant.mjs"
   },
-  "keywords": ["homebridge-plugin", "harvia", "sauna", "homekit"],
-  "engines": { "node": ">=18.0.0", "homebridge": ">=1.6.0 || >=2.0.0" },
+  "keywords": [
+    "homebridge-plugin",
+    "harvia",
+    "sauna",
+    "homekit"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.6.0 || >=2.0.0"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jos3phburns-afk/Homebridge-harvia.git"
+    "url": "git+https://github.com/PeterWestermann/Homebridge-harvia.git"
   },
   "bugs": {
-    "url": "https://github.com/jos3phburns-afk/Homebridge-harvia/issues"
+    "url": "https://github.com/PeterWestermann/Homebridge-harvia/issues"
   },
-  "homepage": "https://github.com/jos3phburns-afk/Homebridge-harvia#readme",
+  "homepage": "https://github.com/PeterWestermann/Homebridge-harvia#readme",
   "dependencies": {
     "amazon-cognito-identity-js": "^6.3.7",
     "axios": "^1.7.2",
@@ -33,5 +42,7 @@
     "homebridge": "^2.0.0",
     "typescript": "^5.4.5"
   },
-  "peerDependencies": { "homebridge": "^1.6.0 || ^2.0.0" }
+  "peerDependencies": {
+    "homebridge": "^1.6.0 || ^2.0.0"
+  }
 }
