@@ -45,3 +45,16 @@ This prevents Homebridge UI from offering the already-integrated `0.2.0` as an u
 ## Rollback
 
 Keep a Homebridge backup and the previously working plugin tarball before installing a new PW build. Do not delete cached accessories during an update unless a separate migration plan explicitly requires it.
+
+
+## Scoped npm package
+
+The maintained package identifier is:
+
+`@peterwestermann/homebridge-harvia`
+
+The Homebridge platform identifier remains `HarviaSauna`.
+
+Homebridge supports resolving cached dynamic-platform accessories after a plugin identifier changes by matching the active dynamic platform name. This allows a controlled migration from `homebridge-harvia` to the scoped package without intentionally regenerating existing accessories.
+
+The first npm publication must be created interactively. Afterwards, npm Trusted Publishing is used with GitHub Actions OIDC and no long-lived npm write token.
