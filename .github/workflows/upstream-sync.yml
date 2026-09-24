@@ -47,8 +47,19 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge upstream into proposal branch
+      - name: Check for existing upstream sync PR
         if: steps.detect.outputs.changed == 'true'
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(gh pr list             --base main             --state open             --search 'chore: sync upstream Homebridge-harvia in:title'             --json number             --jq 'length')"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream into proposal branch
+        if: steps.detect.outputs.changed == 'true' && steps.existing.outputs.count == '0'
         id: merge
         shell: bash
         env:
@@ -57,6 +68,7 @@ jobs:
           set -euo pipefail
           branch="automation/upstream-sync-$(date -u +%Y%m%d-%H%M%S)"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
@@ -73,4 +85,19 @@ jobs:
 
           git push origin "$branch"
 
-          gh pr create             --base main             --head "$branch"             --title "chore: sync upstream Homebridge-harvia"             --body "Automated proposal to merge the latest `jos3phburns-afk/Homebridge-harvia:main` into the PW-maintained fork. The PW temperature-sensor integrity check and TypeScript build completed successfully before this PR was opened. Runtime/HomeKit verification is still required before a PW release."
+          cat > /tmp/upstream-pr-body.md <<'EOF'
+          Automated proposal to merge the latest `jos3phburns-afk/Homebridge-harvia:main` into the PW-maintained fork.
+
+          Automated checks completed before this PR was opened:
+          - PW temperature-sensor integrity check
+          - TypeScript build
+
+          Runtime/HomeKit verification is still required before a PW npm release.
+          EOF
+
+          gh pr create             --base main             --head "$branch"             --title "chore: sync upstream Homebridge-harvia"             --body-file /tmp/upstream-pr-body.md             --assignee PeterWestermann
+
+      - name: Report existing sync PR
+        if: steps.detect.outputs.changed == 'true' && steps.existing.outputs.count != '0'
+        run: |
+          echo "An upstream sync PR is already open. No duplicate PR was created."
