@@ -264,6 +264,7 @@ jobs:
           for _ in $(seq 1 12); do
             if [ "$(npm view "@peterwestermann/homebridge-harvia@$NEW_VERSION" version 2>/dev/null || true)" = "$NEW_VERSION" ]; then
               echo "PW release $NEW_VERSION is published and visible on npm."
+              echo "The Release Hygiene workflow will create or verify the matching Git tag and GitHub release from npm gitHead metadata."
               exit 0
             fi
             sleep 5
