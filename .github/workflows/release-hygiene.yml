@@ -1,0 +1,121 @@
+name: Release Hygiene
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - .github/workflows/release-hygiene.yml
+  workflow_run:
+    workflows:
+      - Publish npm Package
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-hygiene-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout maintained branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Resolve published package metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+
+          remote_version=""
+          for _ in $(seq 1 12); do
+            remote_version="$(npm view "$package@$version" version 2>/dev/null || true)"
+            if [ "$remote_version" = "$version" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$remote_version" != "$version" ]; then
+            if [ "${{ github.event_name }}" = "workflow_run" ]; then
+              echo "::error::$package@$version is not visible on npm after a successful publish workflow."
+              exit 1
+            fi
+            echo "::notice::$package@$version is not published yet; release hygiene will run again after publishing."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git_head="$(npm view "$package@$version" gitHead 2>/dev/null || true)"
+          if [ -z "$git_head" ]; then
+            echo "::error::npm metadata for $package@$version has no gitHead; refusing to create an imprecise release tag."
+            exit 1
+          fi
+
+          git fetch --tags --force origin
+          if ! git cat-file -e "$git_head^{commit}" 2>/dev/null; then
+            git fetch origin "$git_head" || true
+          fi
+          if ! git cat-file -e "$git_head^{commit}" 2>/dev/null; then
+            echo "::error::Published gitHead $git_head is not present in this repository."
+            exit 1
+          fi
+
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "git_head=$git_head" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Create or verify Git tag and GitHub release
+        if: steps.meta.outputs.skip == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          GIT_HEAD: ${{ steps.meta.outputs.git_head }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            tagged_sha="$(git rev-list -n 1 "$tag")"
+            if [ "$tagged_sha" != "$GIT_HEAD" ]; then
+              echo "::error::$tag already exists but points to $tagged_sha instead of published gitHead $GIT_HEAD."
+              exit 1
+            fi
+            echo "$tag already points to the published source commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" "$GIT_HEAD" -m "PW $tag"
+            git push origin "$tag"
+          fi
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists."
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GIT_HEAD" --generate-notes --title "$tag"
+          fi
+
+          echo "Release hygiene complete for $tag at $GIT_HEAD."
