@@ -16,36 +16,70 @@ This fork is maintained as a thin delta on top of:
 
 No threshold, debounce, or automation logic is embedded in the plugin. HomeKit / Apple Shortcuts own that policy.
 
-## Upstream updates
+## Automatic upstream update and release flow
 
-`.github/workflows/upstream-sync.yml` checks upstream and creates a pull request when new upstream commits can be merged cleanly.
+`.github/workflows/upstream-sync.yml` checks `jos3phburns-afk/Homebridge-harvia:main` every day and can also be started manually.
 
-The sync is deliberately not auto-merged. A passing TypeScript build proves build compatibility, not real Harvia/HomeKit runtime compatibility.
+When new upstream commits are detected, the workflow automatically:
 
-After an upstream merge:
-1. CI must pass on Node.js 22 and 24.
-2. The PW integrity check must pass.
-3. Review upstream behavioural changes.
-4. Merge the sync PR.
-5. Increment the PW version according to the release policy.
-6. Build a release package.
-7. Install on Homebridge with backup and rollback available.
-8. Verify Power, thermostat, light/fan/door as applicable, current temperature, and temperature-triggered HomeKit automation.
+1. merges upstream into a dedicated `automation/upstream-sync-...` branch;
+2. automatically resolves only the expected `package.json` identity/version conflict by taking the upstream dependency/script baseline and then restoring the PW package identity;
+3. stops safely if any other merge conflict remains;
+4. computes the next stable PW version;
+5. verifies that the PW temperature-sensor delta is still present;
+6. installs dependencies without creating a package lock, builds TypeScript, syntax-checks generated JavaScript and performs an npm package dry-run;
+7. creates an audit pull request;
+8. explicitly dispatches the independent CI workflow on Node.js 22 and 24 and waits for it to pass;
+9. merges the PR with a merge commit so upstream ancestry is preserved;
+10. explicitly dispatches the npm publish workflow and waits for successful publication;
+11. confirms that the new scoped version is visible from the npm registry.
+
+The npm publication uses Trusted Publishing / GitHub Actions OIDC. No long-lived npm write token is required.
+
+The workflow also self-heals a missed publication: on every run it checks whether the current `main` version exists on npm. If not, it dispatches the publish workflow again before processing further upstream changes.
+
+## Safety gates
+
+Automatic publication happens only after repository-level checks pass. The automated gates include:
+
+- PW package identity: `@peterwestermann/homebridge-harvia`;
+- dedicated `TemperatureSensorAccessory`;
+- `enableTemperatureSensor` configuration;
+- stable temperature-accessory identity;
+- TypeScript build;
+- generated JavaScript syntax validation;
+- npm package dry-run;
+- independent CI on Node.js 22 and 24;
+- publish-time PW verification and build.
+
+Unexpected merge conflicts are never auto-resolved. They leave the current npm release untouched and require review.
+
+GitHub Actions cannot perform a real MyHarvia/HomeKit runtime test against the private CL-Orion installation. Therefore publication means "CI-validated and package-published", not "already installed on the sauna". Homebridge remains the installation gate and will offer the new npm version as an update.
 
 ## Version policy
 
-The scoped package `@peterwestermann/homebridge-harvia` uses its own stable semantic-version line.
+The scoped package `@peterwestermann/homebridge-harvia` uses stable semantic versions.
 
 Initial PW scoped release:
+
 - integrated upstream baseline: `0.2.0`
 - PW scoped package: `0.2.1`
 
-Because Homebridge checks updates for the installed npm package name, the scoped package no longer needs a `-pw` prerelease suffix. New upstream changes are detected by the upstream-sync workflow, reviewed, merged, and then released as a new stable PW package version.
+For every successfully integrated upstream change, the automation chooses a new version that is strictly higher than the previous PW version. If upstream advances its own major/minor/patch line, the PW version follows that line and adds one patch level for the maintained PW variant. Otherwise the existing PW patch number is incremented.
+
+Examples:
+
+- PW `0.2.1`, upstream remains `0.2.0` with new commits -> PW `0.2.2`
+- PW `0.2.2`, upstream becomes `0.3.0` -> PW `0.3.1`
+- PW `0.3.1`, upstream becomes `1.0.0` -> PW `1.0.1`
+
+Because Homebridge checks updates for the installed npm package name, every successfully published higher stable version is offered as an update for the installed scoped package.
 
 ## Rollback
 
 Keep a Homebridge backup and the previously working plugin tarball before installing a new PW build. Do not delete cached accessories during an update unless a separate migration plan explicitly requires it.
 
+Automatic upstream integration publishes a new npm package but does not automatically install it on CL-Orion. This keeps the running sauna installation rollback-capable and avoids an unattended production restart.
 
 ## Scoped npm package
 
@@ -55,6 +89,4 @@ The maintained package identifier is:
 
 The Homebridge platform identifier remains `HarviaSauna`.
 
-Homebridge supports resolving cached dynamic-platform accessories after a plugin identifier changes by matching the active dynamic platform name. This allows a controlled migration from `homebridge-harvia` to the scoped package without intentionally regenerating existing accessories.
-
-The first npm publication must be created interactively. Afterwards, npm Trusted Publishing is used with GitHub Actions OIDC and no long-lived npm write token.
+Homebridge supports resolving cached dynamic-platform accessories after a plugin identifier changes by matching the active dynamic platform name. This allowed the controlled migration from `homebridge-harvia` to the scoped package without intentionally regenerating existing accessories.
