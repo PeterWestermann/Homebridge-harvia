@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 
 const previousVersion = process.argv[2];
+const upstreamVersion = process.argv[3];
 
-if (!previousVersion) {
-  console.error('Usage: node scripts/prepare-upstream-release.mjs <previous-pw-version>');
+if (!previousVersion || !upstreamVersion) {
+  console.error('Usage: node scripts/prepare-upstream-release.mjs <previous-pw-version> <upstream-version>');
   process.exit(1);
 }
 
@@ -32,7 +33,7 @@ const pkgPath = 'package.json';
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
 const previous = parseVersion(previousVersion, 'previous PW');
-const upstream = parseVersion(pkg.version, 'upstream');
+const upstream = parseVersion(upstreamVersion, 'upstream');
 
 const nextFromPrevious = [previous[0], previous[1], previous[2] + 1];
 const nextFromUpstream = [upstream[0], upstream[1], upstream[2] + 1];
@@ -66,4 +67,4 @@ delete pkg.private;
 
 fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-console.log(`Prepared PW release ${pkg.version} from upstream ${formatVersion(upstream)} (previous PW ${previousVersion}).`);
+console.log(`Prepared PW release ${pkg.version} from upstream ${upstreamVersion} (previous PW ${previousVersion}).`);
