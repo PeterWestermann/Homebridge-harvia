@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
+  checks: read
 
 concurrency:
   group: upstream-sync
@@ -23,11 +25,59 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Ensure current PW release is published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          package_name="$(node -p "require('./package.json').name")"
+          current_version="$(node -p "require('./package.json').version")"
+
+          if npm view "$package_name@$current_version" version >/dev/null 2>&1; then
+            echo "$package_name@$current_version is already published."
+            exit 0
+          fi
+
+          echo "Current main version is missing from npm; dispatching publish recovery."
+          gh workflow run publish.yml --ref main
+
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list --workflow publish.yml --branch main --event workflow_dispatch --limit 20 --json databaseId,headSha --jq ".[] | select(.headSha == \"${GITHUB_SHA}\") | .databaseId" | head -n 1)"
+            if [ -n "$run_id" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$run_id" ]; then
+            echo "::error::Could not locate the recovery publish workflow run."
+            exit 1
+          fi
+
+          gh run watch "$run_id" --exit-status
+
+          for _ in $(seq 1 12); do
+            if [ "$(npm view "$package_name@$current_version" version 2>/dev/null || true)" = "$current_version" ]; then
+              echo "Recovered npm publication for $package_name@$current_version."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Publish workflow succeeded, but $package_name@$current_version is still not visible on npm."
+          exit 1
 
       - name: Fetch upstream
         shell: bash
@@ -43,8 +93,10 @@ jobs:
           set -euo pipefail
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "PW main already contains the current upstream main."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream commits detected."
           fi
 
       - name: Check for existing upstream sync PR
@@ -58,46 +110,169 @@ jobs:
           count="$(gh pr list             --base main             --state open             --search 'chore: sync upstream Homebridge-harvia in:title'             --json number             --jq 'length')"
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
-      - name: Merge upstream into proposal branch
+      - name: Prepare and validate upstream candidate
         if: steps.detect.outputs.changed == 'true' && steps.existing.outputs.count == '0'
-        id: merge
+        id: prepare
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
           branch="automation/upstream-sync-$(date -u +%Y%m%d-%H%M%S)"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          previous_version="$(node -p "require('./package.json').version")"
+          upstream_version="$(git show upstream/main:package.json | node -e "let s=''; process.stdin.on('data', d => s += d); process.stdin.on('end', () => console.log(JSON.parse(s).version));")"
+          upstream_sha="$(git rev-parse upstream/main)"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
 
-          if ! git merge --no-edit upstream/main; then
-            git merge --abort || true
-            echo "::error::Upstream merge has conflicts. Manual review is required."
-            exit 1
+          set +e
+          git merge --no-commit --no-ff upstream/main
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -v '^package.json$' || true)"
+
+            if [ -n "$unexpected" ]; then
+              echo "::error::Upstream merge has conflicts outside package.json:"
+              printf '%s\n' "$unexpected"
+              git merge --abort || true
+              exit 1
+            fi
+
+            echo "Resolving expected package.json identity/version conflict from upstream."
+            git checkout --theirs -- package.json
+            git add package.json
           fi
 
-          npm install --no-audit --no-fund
+          node scripts/prepare-upstream-release.mjs "$previous_version" "$upstream_version"
+          new_version="$(node -p "require('./package.json').version")"
+
+          npm install --no-audit --no-fund --no-package-lock
           npm run verify:pw
           npm run build
 
-          git push origin "$branch"
+          test -f dist/index.js
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find dist -type f -name '*.js' -print0)
 
-          cat > /tmp/upstream-pr-body.md <<'EOF'
-          Automated proposal to merge the latest `jos3phburns-afk/Homebridge-harvia:main` into the PW-maintained fork.
+          npm pack --dry-run
 
-          Automated checks completed before this PR was opened:
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "::error::Unresolved merge conflicts remain."
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+
+          git add package.json
+          git commit -m "chore: sync upstream and prepare PW v$new_version"
+
+          head_sha="$(git rev-parse HEAD)"
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Publish candidate branch, validate CI, merge and release
+        if: steps.detect.outputs.changed == 'true' && steps.existing.outputs.count == '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+          NEW_VERSION: ${{ steps.prepare.outputs.new_version }}
+          HEAD_SHA: ${{ steps.prepare.outputs.head_sha }}
+          UPSTREAM_SHA: ${{ steps.prepare.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "$BRANCH"
+
+          cat > /tmp/upstream-pr-body.md <<EOF
+          Automated integration of the latest `jos3phburns-afk/Homebridge-harvia:main` into the PW-maintained fork.
+
+          Upstream commit: `$UPSTREAM_SHA`
+          Prepared PW release: `@$NEW_VERSION` (package: `@peterwestermann/homebridge-harvia`)
+
+          Automated pre-merge gates completed:
+          - package identity normalized to the PW scoped package
           - PW temperature-sensor integrity check
           - TypeScript build
+          - generated JavaScript syntax check
+          - npm package dry-run
 
-          Runtime/HomeKit verification is still required before a PW npm release.
+          A separate CI workflow is dispatched for Node.js 22 and 24. Only after that CI passes is this PR merged with a merge commit, preserving upstream ancestry. The npm publish workflow is then dispatched explicitly.
+
+          Runtime/HomeKit installation is not performed automatically; Homebridge will offer the newly published npm version as an update.
           EOF
 
-          gh pr create             --base main             --head "$branch"             --title "chore: sync upstream Homebridge-harvia"             --body-file /tmp/upstream-pr-body.md             --assignee PeterWestermann
+          pr_url="$(gh pr create             --base main             --head "$BRANCH"             --title "chore: sync upstream Homebridge-harvia -> PW v$NEW_VERSION"             --body-file /tmp/upstream-pr-body.md             --assignee PeterWestermann)"
+
+          pr_number="$(gh pr view "$pr_url" --json number --jq '.number')"
+
+          echo "Dispatching independent CI for $BRANCH."
+          gh workflow run ci.yml --ref "$BRANCH"
+
+          ci_run_id=""
+          for _ in $(seq 1 30); do
+            ci_run_id="$(gh run list --workflow ci.yml --branch "$BRANCH" --event workflow_dispatch --limit 20 --json databaseId,headSha --jq ".[] | select(.headSha == \"$HEAD_SHA\") | .databaseId" | head -n 1)"
+            if [ -n "$ci_run_id" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$ci_run_id" ]; then
+            echo "::error::Could not locate the dispatched CI run."
+            exit 1
+          fi
+
+          gh run watch "$ci_run_id" --exit-status
+
+          echo "CI passed. Merging PR #$pr_number with a merge commit."
+          gh pr merge "$pr_number" --merge --delete-branch
+
+          merge_sha="$(gh pr view "$pr_number" --json mergeCommit --jq '.mergeCommit.oid')"
+          if [ -z "$merge_sha" ] || [ "$merge_sha" = "null" ]; then
+            echo "::error::Could not determine the merged main commit."
+            exit 1
+          fi
+
+          echo "Dispatching npm publication for PW v$NEW_VERSION."
+          gh workflow run publish.yml --ref main
+
+          publish_run_id=""
+          for _ in $(seq 1 30); do
+            publish_run_id="$(gh run list --workflow publish.yml --branch main --event workflow_dispatch --limit 20 --json databaseId,headSha --jq ".[] | select(.headSha == \"$merge_sha\") | .databaseId" | head -n 1)"
+            if [ -n "$publish_run_id" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$publish_run_id" ]; then
+            echo "::error::Could not locate the dispatched publish run."
+            exit 1
+          fi
+
+          gh run watch "$publish_run_id" --exit-status
+
+          for _ in $(seq 1 12); do
+            if [ "$(npm view "@peterwestermann/homebridge-harvia@$NEW_VERSION" version 2>/dev/null || true)" = "$NEW_VERSION" ]; then
+              echo "PW release $NEW_VERSION is published and visible on npm."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Publish workflow completed, but PW v$NEW_VERSION is not yet visible on npm."
+          exit 1
 
       - name: Report existing sync PR
         if: steps.detect.outputs.changed == 'true' && steps.existing.outputs.count != '0'
         run: |
-          echo "An upstream sync PR is already open. No duplicate PR was created."
+          echo "::warning::An upstream sync PR is already open. No duplicate PR or release was created."
