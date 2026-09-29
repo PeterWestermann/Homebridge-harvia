@@ -18,7 +18,17 @@ No threshold, debounce, or automation logic is embedded in the plugin. HomeKit /
 
 ## Automatic upstream update and release flow
 
-`.github/workflows/upstream-sync.yml` checks `jos3phburns-afk/Homebridge-harvia:main` every day and can also be started manually.
+`.github/workflows/upstream-sync.yml` checks both
+`jos3phburns-afk/Homebridge-harvia:main` and the official
+`homebridge-harvia` npm release every day and can also be started manually.
+
+The npm check protects against releases that were published without pushing the
+corresponding version commit to GitHub. A changed npm tarball is rebuilt from
+its audited Git ref and compared file by file, with only `package.json` version
+being normalized. A packaging-only version bump is recorded without publishing
+a redundant PW runtime release. If the npm payload contains files that cannot
+be reproduced from GitHub, automation stops and opens a deduplicated issue for
+manual review instead of importing compiled code blindly.
 
 When new upstream commits are detected, the workflow automatically:
 
@@ -38,6 +48,10 @@ The npm publication uses Trusted Publishing / GitHub Actions OIDC. No long-lived
 
 The workflow also self-heals a missed publication: on every run it checks whether the current `main` version exists on npm. If not, it dispatches the publish workflow again before processing further upstream changes.
 
+The last successfully audited official npm version and integrity value are
+stored in `.github/upstream-npm-state.json`. This state is updated through an
+auditable pull request when npm changes without a corresponding source merge.
+
 ## Safety gates
 
 Automatic publication happens only after repository-level checks pass. The automated gates include:
@@ -51,6 +65,8 @@ Automatic publication happens only after repository-level checks pass. The autom
 - npm package dry-run;
 - independent CI on Node.js 22 and 24;
 - publish-time PW verification and build.
+- reproducibility comparison between changed official npm payloads and the
+  audited upstream Git source.
 
 Unexpected merge conflicts are never auto-resolved. They leave the current npm release untouched and require review.
 

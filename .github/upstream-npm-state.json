@@ -1,0 +1,11 @@
+{
+  "package": "homebridge-harvia",
+  "version": "0.3.0",
+  "gitHead": "0f7a33c19af6c8326d89e0286f3c5faa9ee968c2",
+  "integrity": "sha512-PEi/Cm182KeWW4SXS0JwoaQn9qf/oEqQlJ4Xr62qEw7ZWmUNM0r16KjpFZpJrjeVYLE1CNtLXr9JzLa3fD0Ifw==",
+  "upstreamBranch": "main",
+  "branchCommit": "7ebe9f633b1596a81228d554e9c914b6bb3b744f",
+  "auditRef": "7ebe9f633b1596a81228d554e9c914b6bb3b744f",
+  "result": "payload-equivalent-to-audited-upstream-git-ref",
+  "auditedAt": "2026-09-29T00:00:00.000Z"
+}
