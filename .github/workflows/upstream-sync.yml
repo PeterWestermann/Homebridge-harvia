@@ -10,6 +10,7 @@ permissions:
   pull-requests: write
   actions: write
   checks: read
+  issues: write
 
 concurrency:
   group: upstream-sync
@@ -86,6 +87,42 @@ jobs:
           git remote add upstream https://github.com/jos3phburns-afk/Homebridge-harvia.git
           git fetch upstream main
 
+      - name: Inspect upstream npm release
+        id: npm
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_name="homebridge-harvia"
+          state_file=".github/upstream-npm-state.json"
+          latest_version="$(npm view "$package_name@latest" version)"
+          latest_git_head="$(npm view "$package_name@$latest_version" gitHead 2>/dev/null || true)"
+          latest_integrity="$(npm view "$package_name@$latest_version" dist.integrity)"
+          recorded_version="$(node -p "require('./$state_file').version")"
+          recorded_integrity="$(node -p "require('./$state_file').integrity")"
+
+          if [ "$latest_version" != "$recorded_version" ] || [ "$latest_integrity" != "$recorded_integrity" ]; then
+            changed=true
+          else
+            changed=false
+          fi
+
+          audit_ref="$(git rev-parse upstream/main)"
+          if [ -n "$latest_git_head" ] && git cat-file -e "$latest_git_head^{commit}" 2>/dev/null; then
+            audit_ref="$latest_git_head"
+          fi
+
+          echo "package=$package_name" >> "$GITHUB_OUTPUT"
+          echo "version=$latest_version" >> "$GITHUB_OUTPUT"
+          echo "git_head=$latest_git_head" >> "$GITHUB_OUTPUT"
+          echo "integrity=$latest_integrity" >> "$GITHUB_OUTPUT"
+          echo "audit_ref=$audit_ref" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+          echo "Upstream npm: $package_name@$latest_version"
+          echo "Recorded npm: $package_name@$recorded_version"
+          echo "Payload audit ref: $audit_ref"
+
       - name: Detect upstream changes
         id: detect
         shell: bash
@@ -98,6 +135,92 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "New upstream commits detected."
           fi
+
+      - name: Audit changed upstream npm payload
+        if: steps.npm.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_NAME: ${{ steps.npm.outputs.package }}
+          PACKAGE_VERSION: ${{ steps.npm.outputs.version }}
+          PACKAGE_GIT_HEAD: ${{ steps.npm.outputs.git_head }}
+          PACKAGE_INTEGRITY: ${{ steps.npm.outputs.integrity }}
+          AUDIT_REF: ${{ steps.npm.outputs.audit_ref }}
+        run: |
+          set -euo pipefail
+
+          set +e
+          node scripts/audit-upstream-npm-release.mjs \
+            "$PACKAGE_NAME" \
+            "$PACKAGE_VERSION" \
+            "$AUDIT_REF" 2>&1 | tee /tmp/upstream-npm-audit.log
+          audit_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$audit_status" -eq 42 ]; then
+            title="Upstream npm payload differs: $PACKAGE_NAME@$PACKAGE_VERSION"
+            existing="$(gh issue list --state open --search "$title in:title" --json number --jq 'length')"
+            if [ "$existing" = "0" ]; then
+              {
+                echo "The official npm payload differs from a fresh package built from the audited upstream Git ref."
+                echo
+                echo "- npm package: \`$PACKAGE_NAME@$PACKAGE_VERSION\`"
+                echo "- npm gitHead: \`${PACKAGE_GIT_HEAD:-not supplied}\`"
+                echo "- audited Git ref: \`$AUDIT_REF\`"
+                echo "- integrity: \`$PACKAGE_INTEGRITY\`"
+                echo
+                echo "Automatic integration stopped safely. Review the unpublished npm-only differences before changing or publishing the PW package."
+                echo
+                echo '```text'
+                tail -n 100 /tmp/upstream-npm-audit.log
+                echo '```'
+              } > /tmp/upstream-npm-issue.md
+              gh issue create --title "$title" --body-file /tmp/upstream-npm-issue.md
+            fi
+            exit 1
+          fi
+
+          if [ "$audit_status" -ne 0 ]; then
+            exit "$audit_status"
+          fi
+
+          node scripts/record-upstream-npm-release.mjs \
+            .github/upstream-npm-state.json \
+            "$PACKAGE_NAME" \
+            "$PACKAGE_VERSION" \
+            "$PACKAGE_GIT_HEAD" \
+            "$PACKAGE_INTEGRITY" \
+            main \
+            "$(git rev-parse upstream/main)" \
+            "$AUDIT_REF"
+
+      - name: Record packaging-only npm release audit
+        if: steps.npm.outputs.changed == 'true' && steps.detect.outputs.changed == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ steps.npm.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          branch="automation/npm-release-audit-$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add .github/upstream-npm-state.json
+          git commit -m "chore: audit upstream npm release $PACKAGE_VERSION"
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "$branch"
+
+          pr_url="$(gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore: record upstream npm audit $PACKAGE_VERSION" \
+            --body "The official npm release was compared with a fresh package built from its audited upstream Git ref. The payload is equivalent after normalizing only package.json version, so no redundant PW runtime release is required.")"
+
+          gh pr checks "$pr_url" --watch --fail-fast
+          gh pr merge "$pr_url" --merge --delete-branch
 
       - name: Check for existing upstream sync PR
         if: steps.detect.outputs.changed == 'true'
@@ -167,7 +290,7 @@ jobs:
             exit 1
           fi
 
-          git add package.json
+          git add package.json .github/upstream-npm-state.json
           git commit -m "chore: sync upstream and prepare PW v$new_version"
 
           head_sha="$(git rev-parse HEAD)"
