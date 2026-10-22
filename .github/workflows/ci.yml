@@ -37,6 +37,9 @@ jobs:
           node-version: ${{ matrix.node }}
           registry-url: https://registry.npmjs.org
 
+      - name: Validate workflow shell scripts
+        run: node scripts/check-workflow-shells.mjs
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
