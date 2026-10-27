@@ -5,6 +5,9 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
+env:
+  GH_REPO: ${{ github.repository }}
+
 permissions:
   contents: write
   pull-requests: write

@@ -5,7 +5,12 @@ import {spawnSync} from 'node:child_process';
 const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash';
 let count = 0;
 for (const file of readdirSync('.github/workflows').filter(name => /\.ya?ml$/.test(name))) {
-  const lines = readFileSync(`.github/workflows/${file}`, 'utf8').split(/\r?\n/);
+  const workflow = readFileSync(`.github/workflows/${file}`, 'utf8');
+  if (/\bgh (?:pr|issue|workflow|run)\s/.test(workflow)) {
+    assert.match(workflow, /^env:\r?\n  GH_REPO: \$\{\{ github\.repository \}\}/m,
+      `${file}: GitHub CLI must explicitly target the maintained fork`);
+  }
+  const lines = workflow.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const match = lines[i].match(/^(\s*)run: \|\s*$/);
     if (!match) continue;
