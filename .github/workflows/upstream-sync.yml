@@ -203,7 +203,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          branch="automation/npm-release-audit-$(date -u +%Y%m%d-%H%M%S)"
+          branch="automation/npm-release-audit-$PACKAGE_VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
@@ -211,15 +211,27 @@ jobs:
           git commit -m "chore: audit upstream npm release $PACKAGE_VERSION"
 
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push origin "$branch"
+          git push --force-with-lease origin "$branch"
 
-          pr_url="$(gh pr create \
+          pr_url="$(gh pr list --base main --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          if [ -z "$pr_url" ]; then
+            pr_url="$(gh pr create \
             --base main \
             --head "$branch" \
             --title "chore: record upstream npm audit $PACKAGE_VERSION" \
             --body "The official npm release was compared with a fresh package built from its audited upstream Git ref. The payload is equivalent after normalizing only package.json version, so no redundant PW runtime release is required.")"
+          fi
 
-          gh pr checks "$pr_url" --watch --fail-fast
+          gh workflow run ci.yml --ref "$branch"
+          head_sha="$(git rev-parse HEAD)"
+          ci_run_id=""
+          for _ in $(seq 1 30); do
+            ci_run_id="$(gh run list --workflow ci.yml --branch "$branch" --event workflow_dispatch --limit 20 --json databaseId,headSha --jq ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -n 1)"
+            if [ -n "$ci_run_id" ]; then break; fi
+            sleep 2
+          done
+          test -n "$ci_run_id"
+          gh run watch "$ci_run_id" --exit-status
           gh pr merge "$pr_url" --merge --delete-branch
 
       - name: Check for existing upstream sync PR
@@ -240,10 +252,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          branch="automation/upstream-sync-$(date -u +%Y%m%d-%H%M%S)"
           previous_version="$(node -p "require('./package.json').version")"
           upstream_version="$(git show upstream/main:package.json | node -e "let s=''; process.stdin.on('data', d => s += d); process.stdin.on('end', () => console.log(JSON.parse(s).version));")"
           upstream_sha="$(git rev-parse upstream/main)"
+          branch="automation/upstream-sync-${upstream_sha:0:12}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -313,25 +325,14 @@ jobs:
           set -euo pipefail
 
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push origin "$BRANCH"
+          git push --force-with-lease origin "$BRANCH"
 
-          cat > /tmp/upstream-pr-body.md <<EOF
-          Automated integration of the latest `jos3phburns-afk/Homebridge-harvia:main` into the PW-maintained fork.
-
-          Upstream commit: `$UPSTREAM_SHA`
-          Prepared PW release: `@$NEW_VERSION` (package: `@peterwestermann/homebridge-harvia`)
-
-          Automated pre-merge gates completed:
-          - package identity normalized to the PW scoped package
-          - PW temperature-sensor integrity check
-          - TypeScript build
-          - generated JavaScript syntax check
-          - npm package dry-run
-
-          A separate CI workflow is dispatched for Node.js 22 and 24. Only after that CI passes is this PR merged with a merge commit, preserving upstream ancestry. The npm publish workflow is then dispatched explicitly.
-
-          Runtime/HomeKit installation is not performed automatically; Homebridge will offer the newly published npm version as an update.
-          EOF
+          {
+            printf '%s\n\n' 'Automated integration of `jos3phburns-afk/Homebridge-harvia:main` into the PW fork.'
+            printf 'Upstream commit: `%s`\nPrepared PW release: `%s` (`@peterwestermann/homebridge-harvia`)\n\n' "$UPSTREAM_SHA" "$NEW_VERSION"
+            printf '%s\n' 'Validated scoped identity, temperature sensor, TypeScript build, JavaScript syntax and npm package contents.'
+            printf '%s\n' 'Independent Node 22/24 CI must pass before merge and npm publication. CL-Orion is never updated automatically.'
+          } > /tmp/upstream-pr-body.md
 
           pr_url="$(gh pr create             --base main             --head "$BRANCH"             --title "chore: sync upstream Homebridge-harvia -> PW v$NEW_VERSION"             --body-file /tmp/upstream-pr-body.md             --assignee PeterWestermann)"
 
