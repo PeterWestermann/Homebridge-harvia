@@ -213,11 +213,14 @@ jobs:
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force-with-lease origin "$branch"
 
-          pr_url="$(gh pr create \
+          pr_url="$(gh pr list --base main --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          if [ -z "$pr_url" ]; then
+            pr_url="$(gh pr create \
             --base main \
             --head "$branch" \
             --title "chore: record upstream npm audit $PACKAGE_VERSION" \
             --body "The official npm release was compared with a fresh package built from its audited upstream Git ref. The payload is equivalent after normalizing only package.json version, so no redundant PW runtime release is required.")"
+          fi
 
           gh workflow run ci.yml --ref "$branch"
           head_sha="$(git rev-parse HEAD)"
